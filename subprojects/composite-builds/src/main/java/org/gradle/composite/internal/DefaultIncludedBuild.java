@@ -18,7 +18,6 @@ package org.gradle.composite.internal;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
-import org.gradle.BuildResult;
 import org.gradle.api.Action;
 import org.gradle.api.artifacts.DependencySubstitutions;
 import org.gradle.api.internal.GradleInternal;
@@ -88,8 +87,7 @@ public class DefaultIncludedBuild implements IncludedBuildInternal {
     public SettingsInternal getLoadedSettings() {
         if (settings == null) {
             GradleLauncher gradleLauncher = getGradleLauncher();
-            gradleLauncher.load();
-            settings = gradleLauncher.getSettings();
+            settings = gradleLauncher.getLoadedSettings();
         }
         return settings;
     }
@@ -98,9 +96,8 @@ public class DefaultIncludedBuild implements IncludedBuildInternal {
     public GradleInternal getConfiguredBuild() {
         if (gradle == null) {
             GradleLauncher gradleLauncher = getGradleLauncher();
-            gradleLauncher.getBuildAnalysis();
-            settings = gradleLauncher.getSettings();
-            gradle = gradleLauncher.getGradle();
+            settings = gradleLauncher.getLoadedSettings();
+            gradle = gradleLauncher.getConfiguredBuild();
         }
         return gradle;
     }
@@ -119,13 +116,12 @@ public class DefaultIncludedBuild implements IncludedBuildInternal {
     }
 
     @Override
-    public BuildResult execute(Iterable<String> tasks, Object listener) {
+    public void execute(Iterable<String> tasks, Object listener) {
         GradleLauncher launcher = getGradleLauncher();
         GradleInternal gradle = launcher.getGradle();
-        gradle.getStartParameter().setTaskNames(tasks);
         gradle.addListener(listener);
         try {
-            return launcher.run();
+            launcher.runTasks(tasks);
         } finally {
             markAsNotReusable();
         }

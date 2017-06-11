@@ -62,8 +62,9 @@ public class DefaultGradleLauncher implements GradleLauncher {
     private final BuildScopeServices buildServices;
     private final List<?> servicesToStop;
     private GradleInternal gradle;
-    private SettingsInternal settings;
     private Stage stage;
+
+    private final GradleBuildController controller;
 
     public DefaultGradleLauncher(GradleInternal gradle, InitScriptHandler initScriptHandler, SettingsLoader settingsLoader,
                                  BuildConfigurer buildConfigurer, ExceptionAnalyser exceptionAnalyser,
@@ -84,6 +85,7 @@ public class DefaultGradleLauncher implements GradleLauncher {
         this.buildCompletionListener = buildCompletionListener;
         this.buildServices = buildServices;
         this.servicesToStop = servicesToStop;
+        controller = new GradleBuildController(gradle);
     }
 
     @Override
@@ -92,8 +94,20 @@ public class DefaultGradleLauncher implements GradleLauncher {
     }
 
     @Override
-    public SettingsInternal getSettings() {
-        return settings;
+    public SettingsInternal getLoadedSettings() {
+        controller.buildStarted();
+        return controller.getLoadedSettings();
+    }
+
+    @Override
+    public GradleInternal getConfiguredBuild() {
+        controller.buildStarted();
+        return controller.getConfiguredBuild();
+    }
+
+    public void runTasks(Iterable<String> taskNames) {
+        controller.buildStarted();
+        controller.runTasks(taskNames);
     }
 
     @Override
@@ -142,11 +156,7 @@ public class DefaultGradleLauncher implements GradleLauncher {
         }
 
         if (stage == null) {
-            // Evaluate init scripts
-            initScriptHandler.executeScripts(gradle);
-
-            // Build `buildSrc`, load settings.gradle, and construct composite (if appropriate)
-            settings = settingsLoader.findAndLoadSettings(gradle);
+            controller.getLoadedSettings();
 
             stage = Stage.Load;
         }
@@ -199,7 +209,7 @@ public class DefaultGradleLauncher implements GradleLauncher {
     private class ConfigureBuild implements RunnableBuildOperation {
         @Override
         public void run(BuildOperationContext context) {
-            buildConfigurer.configure(gradle);
+            controller.getConfiguredBuild();
 
             if (!isConfigureOnDemand()) {
                 projectsEvaluated();
@@ -284,5 +294,69 @@ public class DefaultGradleLauncher implements GradleLauncher {
 
     private boolean isNestedBuild() {
         return gradle.getParent() != null;
+    }
+
+    private class GradleBuildController {
+        private final GradleInternal gradle;
+        private boolean started;
+        private SettingsInternal settings;
+        private GradleInternal configuredBuild;
+
+        private GradleBuildController(GradleInternal gradle) {
+            this.gradle = gradle;
+        }
+
+        private void buildStarted() {
+            if (!started) {
+                buildListener.buildStarted(gradle);
+                started = true;
+            }
+        }
+
+        public SettingsInternal getLoadedSettings() {
+            if (settings == null) {
+                // Evaluate init scripts
+                initScriptHandler.executeScripts(gradle);
+
+                // Build `buildSrc`, load settings.gradle, and construct composite (if appropriate)
+                settings = settingsLoader.findAndLoadSettings(gradle);
+            }
+            return settings;
+        }
+
+        public GradleInternal getConfiguredBuild() {
+            getLoadedSettings();
+            if (configuredBuild == null) {
+                configuredBuild = gradle;
+                buildConfigurer.configure(configuredBuild);
+            }
+            return configuredBuild;
+        }
+
+        public void runTasks(final Iterable<String> taskNames) {
+            // TODO:DAZ Find a way to avoid a separate worker lease here. Preferably a single shared pool of worker threads.
+            WorkerLeaseService workerLeaseService = buildServices.get(WorkerLeaseService.class);
+            workerLeaseService.withLocks(Collections.singleton(workerLeaseService.getWorkerLease()), new Runnable() {
+                @Override
+                public void run() {
+                    Throwable failure = null;
+                    try {
+                        // TODO:DAZ Should be able to assert here that build is already configured...
+                        getConfiguredBuild();
+                        projectsEvaluated();
+                        modelConfigurationListener.onConfigure(gradle);
+
+                        gradle.getStartParameter().setTaskNames(taskNames);
+                        buildConfigurationActionExecuter.select(gradle);
+
+                        buildExecuter.execute(gradle);
+                    } catch (Throwable t) {
+                        failure = exceptionAnalyser.transform(t);
+                    }
+
+                    buildListener.buildFinished(new BuildResult(gradle, failure));
+                }
+            });
+        }
     }
 }

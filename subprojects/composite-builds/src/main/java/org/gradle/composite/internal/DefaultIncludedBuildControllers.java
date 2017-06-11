@@ -24,16 +24,23 @@ import org.gradle.includedbuild.internal.IncludedBuildControllers;
 import org.gradle.includedbuild.internal.IncludedBuilds;
 import org.gradle.internal.concurrent.CompositeStoppable;
 import org.gradle.internal.concurrent.Stoppable;
+import org.gradle.internal.operations.BuildOperationContext;
+import org.gradle.internal.operations.BuildOperationExecutor;
+import org.gradle.internal.operations.RunnableBuildOperation;
+import org.gradle.internal.progress.BuildOperationDescriptor;
 
 import java.util.Map;
 
 class DefaultIncludedBuildControllers implements Stoppable, IncludedBuildControllers {
     private final Map<BuildIdentifier, IncludedBuildController> buildControllers = Maps.newHashMap();
     private final IncludedBuilds includedBuilds;
+    private final BuildOperationExecutor buildOperationExecutor;
     private boolean taskExecutionStarted;
 
-    DefaultIncludedBuildControllers(IncludedBuilds includedBuilds) {
+    DefaultIncludedBuildControllers(IncludedBuilds includedBuilds, BuildOperationExecutor buildOperationExecutor) {
         this.includedBuilds = includedBuilds;
+
+        this.buildOperationExecutor = buildOperationExecutor;
     }
 
     public IncludedBuildController getBuildController(BuildIdentifier buildId) {
@@ -42,12 +49,28 @@ class DefaultIncludedBuildControllers implements Stoppable, IncludedBuildControl
             return buildController;
         }
 
-        IncludedBuild build = includedBuilds.getBuild(buildId.getName());
-        DefaultIncludedBuildController newBuildController = new DefaultIncludedBuildController(build);
+        final IncludedBuild build = includedBuilds.getBuild(buildId.getName());
+        final DefaultIncludedBuildController newBuildController = new DefaultIncludedBuildController(build);
         buildControllers.put(buildId, newBuildController);
 
-        // TODO:DAZ Do this properly
-        new Thread(newBuildController).start();
+        final RunnableBuildOperation operation = new RunnableBuildOperation() {
+             @Override
+             public void run(BuildOperationContext context) {
+                 newBuildController.run();
+             }
+
+             @Override
+             public BuildOperationDescriptor.Builder description() {
+                 return BuildOperationDescriptor.displayName("Run tasks for build: " + build.getName());
+             }
+         };
+
+         new Thread() {
+             @Override
+             public void run() {
+                 buildOperationExecutor.run(operation);
+             }
+         }.start();
 
         // Required for build controllers created after initial start
         if (taskExecutionStarted) {

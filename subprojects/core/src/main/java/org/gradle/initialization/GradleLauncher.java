@@ -26,7 +26,10 @@ import org.gradle.internal.concurrent.Stoppable;
 public interface GradleLauncher extends Stoppable {
 
     GradleInternal getGradle();
-    SettingsInternal getSettings();
+
+    SettingsInternal getLoadedSettings();
+    GradleInternal getConfiguredBuild();
+    void runTasks(Iterable<String> tasks);
 
     /**
      * <p>Executes the build for this {@code GradleLauncher} instance and returns the result.</p>

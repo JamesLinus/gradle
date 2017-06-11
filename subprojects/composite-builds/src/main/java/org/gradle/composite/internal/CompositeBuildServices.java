@@ -28,6 +28,7 @@ import org.gradle.includedbuild.internal.IncludedBuildTaskGraph;
 import org.gradle.includedbuild.internal.IncludedBuilds;
 import org.gradle.initialization.NestedBuildFactory;
 import org.gradle.internal.composite.CompositeContextBuilder;
+import org.gradle.internal.operations.BuildOperationExecutor;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.service.ServiceRegistration;
 import org.gradle.internal.service.scopes.AbstractPluginServiceRegistry;
@@ -64,8 +65,8 @@ public class CompositeBuildServices extends AbstractPluginServiceRegistry {
             return new DefaultCompositeContextBuilder(includedBuilds, projectRegistry, context);
         }
 
-        public IncludedBuildControllers createIncludedBuildControllers(IncludedBuilds includedBuilds) {
-            return new DefaultIncludedBuildControllers(includedBuilds);
+        public IncludedBuildControllers createIncludedBuildControllers(IncludedBuilds includedBuilds, BuildOperationExecutor buildOperationExecutor) {
+            return new DefaultIncludedBuildControllers(includedBuilds, buildOperationExecutor);
         }
 
         public IncludedBuildTaskGraph createIncludedBuildTaskGraph(IncludedBuildControllers controllers) {
