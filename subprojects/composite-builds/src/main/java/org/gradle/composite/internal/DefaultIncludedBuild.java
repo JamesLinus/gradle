@@ -19,6 +19,7 @@ package org.gradle.composite.internal;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import org.gradle.api.Action;
+import org.gradle.api.Task;
 import org.gradle.api.artifacts.DependencySubstitutions;
 import org.gradle.api.internal.GradleInternal;
 import org.gradle.api.internal.SettingsInternal;
@@ -26,11 +27,15 @@ import org.gradle.api.internal.artifacts.ImmutableModuleIdentifierFactory;
 import org.gradle.api.internal.artifacts.ivyservice.dependencysubstitution.DefaultDependencySubstitutions;
 import org.gradle.api.internal.artifacts.ivyservice.dependencysubstitution.DependencySubstitutionsInternal;
 import org.gradle.api.tasks.TaskReference;
+import org.gradle.execution.TaskPathProjectEvaluator;
+import org.gradle.execution.TaskSelector;
+import org.gradle.initialization.DefaultBuildCancellationToken;
 import org.gradle.initialization.GradleLauncher;
 import org.gradle.internal.Factory;
 
 import java.io.File;
 import java.util.List;
+import java.util.Set;
 
 public class DefaultIncludedBuild implements IncludedBuildInternal {
     private final File projectDir;
@@ -102,6 +107,21 @@ public class DefaultIncludedBuild implements IncludedBuildInternal {
         return gradle;
     }
 
+    @Override
+    public void addTasks(Iterable<String> taskPaths) {
+        GradleInternal configuredBuild = getConfiguredBuild();
+        TaskSelector taskSelector = new TaskSelector(configuredBuild, new TaskPathProjectEvaluator(new DefaultBuildCancellationToken()));
+        for (String taskPath : taskPaths) {
+            Set<Task> tasks = taskSelector.getSelection(taskPath).getTasks();
+            configuredBuild.getTaskGraph().addTasks(tasks);
+        }
+    }
+
+    @Override
+    public void populateTaskGraph() {
+        getConfiguredBuild().getTaskGraph().populate();
+    }
+
     private GradleLauncher getGradleLauncher() {
         if (gradleLauncher == null) {
             gradleLauncher = gradleLauncherFactory.create();
@@ -133,6 +153,6 @@ public class DefaultIncludedBuild implements IncludedBuildInternal {
 
     @Override
     public String toString() {
-        return String.format("includedBuild[%s]", projectDir.getPath());
+        return String.format("includedBuild[%s]", projectDir.getName());
     }
 }

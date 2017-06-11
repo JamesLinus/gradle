@@ -49,6 +49,7 @@ class DefaultIncludedBuildController implements Runnable, Stoppable, IncludedBui
     private final IncludedBuildInternal includedBuild;
 
     private final Map<String, TaskState> tasks = Maps.newLinkedHashMap();
+    private final Set<String> tasksAdded = Sets.newHashSet();
 
     // Fields guarded by lock
     private final Lock lock = new ReentrantLock();
@@ -62,6 +63,25 @@ class DefaultIncludedBuildController implements Runnable, Stoppable, IncludedBui
     private final CountDownLatch started = new CountDownLatch(1);
     private final AtomicBoolean stopRequested = new AtomicBoolean();
     private final CountDownLatch stopped = new CountDownLatch(1);
+
+    @Override
+    public boolean populateTaskGraph() {
+        Set<String> tasksToExecute = Sets.newLinkedHashSet();
+        for (Map.Entry<String, TaskState> taskEntry : tasks.entrySet()) {
+            if (taskEntry.getValue().status == TaskStatus.QUEUED) {
+                String taskName = taskEntry.getKey();
+                if (tasksAdded.add(taskName)) {
+                    tasksToExecute.add(taskName);
+                }
+            }
+        }
+        if (tasksToExecute.isEmpty()) {
+            return false;
+        }
+        includedBuild.addTasks(tasksToExecute);
+        includedBuild.populateTaskGraph();
+        return true;
+    }
 
     @Override
     public void run() {

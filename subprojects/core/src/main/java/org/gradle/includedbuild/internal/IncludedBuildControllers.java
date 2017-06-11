@@ -18,6 +18,8 @@ package org.gradle.includedbuild.internal;
 import org.gradle.api.artifacts.component.BuildIdentifier;
 
 public interface IncludedBuildControllers {
+    void populateTaskGraphs();
+
     void startTaskExecution();
 
     IncludedBuildController getBuildController(BuildIdentifier buildIdentifier);
